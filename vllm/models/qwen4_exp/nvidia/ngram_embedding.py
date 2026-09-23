@@ -705,6 +705,19 @@ class Qwen4ExpNGramEmbedding(nn.Module):
             if engram_config is not None and engram_config.cpu_offload
             else Qwen4ExpPLEDeviceEmbedding
         )
+        ssd_kwargs = {}
+        if (
+            engram_config is not None
+            and engram_config.cpu_offload
+            and engram_config.ssd_rows_path
+        ):
+            from .ple_ssd import Qwen4ExpPLESSDEmbedding
+
+            embedding_cls = Qwen4ExpPLESSDEmbedding
+            ssd_kwargs = dict(
+                ssd_rows_path=engram_config.ssd_rows_path,
+                reader_threads=engram_config.ssd_reader_threads,
+            )
         self.ngram_embedding = embedding_cls(
             padded_vocab_size,
             self.head_dim,
@@ -715,6 +728,7 @@ class Qwen4ExpNGramEmbedding(nn.Module):
             num_ngram_heads=self.ngram_heads,
             max_total_tokens=max_total_tokens,
             data_parallel_rank=data_parallel_rank,
+            **ssd_kwargs,
         )
         weight = self.ngram_embedding.weight
         logger.info(
@@ -724,7 +738,7 @@ class Qwen4ExpNGramEmbedding(nn.Module):
             type(embedding_quant_method).__name__,
             weight.dtype,
             weight.device,
-            weight.is_pinned(),
+            weight.device.type == "cpu" and weight.is_pinned(),
         )
 
     @staticmethod
@@ -919,6 +933,10 @@ class Qwen4ExpNGramEmbedding(nn.Module):
                         f"expected {expected_shape}, got "
                         f"{tuple(loaded_weight.shape)}"
                     )
+                if getattr(embedding, "skips_checkpoint_rows", False):
+                    # Rows are served from a pre-exported file; do not read them.
+                    loaded.add("ngram_embedding.weight")
+                    continue
                 embedding.weight.weight_loader(
                     embedding.weight,
                     loaded_weight,

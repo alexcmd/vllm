@@ -50,10 +50,24 @@ class EngramConfig:
     the other settings allow it, falling back to per-replica tables when DP
     replicas are not co-located on one node or /dev/shm cannot hold them."""
 
+    ssd_rows_path: str | None = None
+    """Serve CPU-offloaded embedding rows from local storage instead of pinned
+    memory. Path to the metadata JSON written by
+    ``tools/ple_ssd/export_ple_rows.py``; rows are read on demand through the OS
+    page cache, so host memory is only used while it is free. Currently
+    supported for Qwen4Exp FP8 PLE tables with one embedding-parallel rank."""
+
+    ssd_reader_threads: int = 16
+    """Parallel reads used for one SSD row lookup batch."""
+
     @model_validator(mode="after")
     def _validate_shared_memory(self) -> Self:
         if self.dp_shared_memory and not self.cpu_offload:
             raise ValueError("dp_shared_memory requires cpu_offload=True")
+        if self.ssd_rows_path and not self.cpu_offload:
+            raise ValueError("ssd_rows_path requires cpu_offload=True")
+        if self.ssd_reader_threads < 1:
+            raise ValueError("ssd_reader_threads must be at least 1")
         return self
 
     def verify_model_config(self, model_config: "ModelConfig | None") -> None:
