@@ -24,8 +24,9 @@ vllm serve /path/to/Qwen3.8-Flash-Next-NVFP4 \
 ```
 
 Checkpoint PLE rows are then skipped during loading, and nothing is pinned for the table. Each step
-reads its rows with parallel `pread` calls, using a small C++ extension built on first use and
-falling back to a slow Python reader. The table's global scale is checked against the checkpoint.
+reads its rows with parallel `pread` calls, using a small C++ extension built on first use. Serving
+requires the extension; only the tensor-level reader used in tests has a Python fallback. The
+table's global scale is checked against the checkpoint.
 
 Each lookup is stream-ordered: a device-to-host copy of the row IDs, a CUDA host function
 (`cudaLaunchHostFunc`) that runs the `pread` calls, and a host-to-device copy of the rows. The
@@ -48,8 +49,12 @@ caching, 8K chunks, 10 GiB FP8 KV. The row file was evicted from the page cache 
 | Decode, 1 client, 8K / 256K | 166 / 186 tok/s | 151 / 186 tok/s |
 | Output, 32K × 8 clients | 425 tok/s | 405 tok/s |
 
-Generated text is byte-identical to the pinned table for every single-client prompt and all 12
-concurrent streams. It also matches the pre-optimization eager baseline for the fixed 8K prompt.
+Generated text is byte-identical to the pinned table for all 13 measured requests that loaded
+their prompt from scratch: 5 single-client prompts plus 12 concurrent streams. It also matches the
+pre-optimization eager baseline for the fixed 8K prompt. One repeated prompt that was served from
+the prefix cache differed from the pinned run after 92 characters. On the pinned table, that same
+cached repeat also differs from its own first run; on SSD rows it matches. The difference therefore
+comes from the prefix-cache path, not from the row source.
 
 Limits: FP8 PLE checkpoints only, one embedding-parallel rank (`ETP=1`). Rows are fetched at
 the start of each step on the PLE side stream. Cold prefill therefore depends on SSD random-read
