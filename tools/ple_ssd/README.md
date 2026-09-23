@@ -38,12 +38,18 @@ To use it with an existing vLLM image, build `tools/ple_ssd/Dockerfile`.
 
 The comparison is against the pinned-host table, with the same flags: CUDA graphs, MTP 2, prefix
 caching, 8K chunks, 10 GiB FP8 KV. The row file was evicted from the page cache before the run.
+Host memory was sampled every 5 s over the whole SSD benchmark. For the pinned table it was sampled
+every 2 s while the live service handled 4 concurrent 128K prompts. GPU peaks come from the same
+benchmark workload for both. Out of 122.6 GiB of host RAM, the pinned table alone takes 47.7 GiB.
 
 | | pinned table | SSD rows |
 |---|---:|---:|
 | Server start to ready | 362 s | 231 s |
 | Pinned host memory for the table | 47.7 GiB | 0 |
+| **Peak host RAM in use** (MemTotal − MemAvailable, whole system) | **73.0 GiB** | **8.0 GiB** |
+| Peak host page cache (reclaimable: model files + row pages) | 113.7 GiB | 79.3 GiB |
 | Host memory available while serving | ~51 GiB | ≥ 114.6 GiB |
+| **Peak RTX memory** (nvidia-smi) | **95,393 MiB** | **94,627 MiB** |
 | First token, 8K / 128K / 256K prompt | 0.37 / 8.45 / 11.96 s | 0.39 / 8.62 / 12.15 s |
 | First token, first cold 8K natural-text prompt | 0.68 s | 1.56 s |
 | Decode, 1 client, 8K / 256K | 166 / 186 tok/s | 151 / 186 tok/s |
